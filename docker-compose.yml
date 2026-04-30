@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  fraud-detection-api:
+    build: .
+    container_name: fraud-detection-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=model/fraud_model.pkl
+    volumes:
+      - ./model:/app/model
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
