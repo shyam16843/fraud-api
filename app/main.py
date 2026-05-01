@@ -11,7 +11,7 @@ app = FastAPI(
     version="3.0.0"
 )
 
-MODEL_PATH = os.getenv("MODEL_PATH", "model/fraud_model.bin")
+MODEL_PATH = os.getenv("MODEL_PATH", "model/fraud_model_v3.bin")
 THRESHOLD = float(os.getenv("THRESHOLD", "0.4"))
 
 model = None
