@@ -8,30 +8,33 @@ from typing import Optional
 app = FastAPI(
     title="Fraud Detection API",
     description="XGBoost-based credit card fraud detection with SHAP explainability",
-    version="1.0.0"
+    version="2.0.0"
 )
 
-# Load model on startup
 MODEL_PATH = os.getenv("MODEL_PATH", "model/fraud_model.pkl")
+SCALER_PATH = os.getenv("SCALER_PATH", "model/scaler.pkl")
+THRESHOLD = float(os.getenv("THRESHOLD", "0.4"))
+
 model = None
+scaler = None
 
 @app.on_event("startup")
 def load_model():
-    global model
+    global model, scaler
     if os.path.exists(MODEL_PATH):
         with open(MODEL_PATH, "rb") as f:
             model = pickle.load(f)
-        print("Model loaded successfully")
+        print("✅ Model loaded")
     else:
-        print(f"WARNING: Model file not found at {MODEL_PATH}")
-        print("Run train_model.py first to generate the model")
+        print(f"❌ Model not found at {MODEL_PATH}")
+
+    if os.path.exists(SCALER_PATH):
+        with open(SCALER_PATH, "rb") as f:
+            scaler = pickle.load(f)
+        print("✅ Scaler loaded")
 
 
 class TransactionFeatures(BaseModel):
-    """
-    Credit card transaction features (V1-V28 are PCA components).
-    Amount is the transaction amount in USD.
-    """
     V1: float; V2: float; V3: float; V4: float
     V5: float; V6: float; V7: float; V8: float
     V9: float; V10: float; V11: float; V12: float
@@ -55,12 +58,14 @@ class PredictionResponse(BaseModel):
 def root():
     return {
         "service": "Fraud Detection API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "author": "Ghanashyam T V",
-        "github": "github.com/shyam16843",
+        "github": "github.com/shyam16843/fraud-detection-api",
+        "live_streamlit": "https://fraud-detection-shyam.streamlit.app",
         "endpoints": {
             "health": "/health",
             "predict": "/predict",
+            "batch": "/predict/batch",
             "docs": "/docs"
         }
     }
@@ -71,7 +76,9 @@ def health():
     return {
         "status": "healthy",
         "model_loaded": model is not None,
-        "model_type": "XGBoost + SMOTEENN",
+        "scaler_loaded": scaler is not None,
+        "model_type": "XGBoost + SMOTE",
+        "threshold": THRESHOLD,
         "performance": {
             "precision": "90%",
             "roc_auc": "0.92",
@@ -83,12 +90,21 @@ def health():
 @app.post("/predict", response_model=PredictionResponse)
 def predict(transaction: TransactionFeatures):
     if model is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Model not loaded. Run train_model.py first."
-        )
+        raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Build feature array (V1-V28 + Amount + Time)
+    # Build raw feature array
+    amount = transaction.Amount
+    time = transaction.Time
+
+    # Scale Amount and Time if scaler available
+    if scaler is not None:
+        scaled = scaler.transform([[amount, time]])
+        amount_scaled = scaled[0][0]
+        time_scaled = scaled[0][1]
+    else:
+        amount_scaled = amount
+        time_scaled = time
+
     features = np.array([[
         transaction.V1, transaction.V2, transaction.V3, transaction.V4,
         transaction.V5, transaction.V6, transaction.V7, transaction.V8,
@@ -97,14 +113,12 @@ def predict(transaction: TransactionFeatures):
         transaction.V17, transaction.V18, transaction.V19, transaction.V20,
         transaction.V21, transaction.V22, transaction.V23, transaction.V24,
         transaction.V25, transaction.V26, transaction.V27, transaction.V28,
-        transaction.Amount, transaction.Time
+        amount_scaled, time_scaled
     ]])
 
-    # Predict
     fraud_prob = float(model.predict_proba(features)[0][1])
-    prediction = "FRAUD" if fraud_prob >= 0.5 else "LEGITIMATE"
+    prediction = "FRAUD" if fraud_prob >= THRESHOLD else "LEGITIMATE"
 
-    # Risk level
     if fraud_prob >= 0.8:
         risk_level = "CRITICAL"
     elif fraud_prob >= 0.5:
@@ -114,7 +128,6 @@ def predict(transaction: TransactionFeatures):
     else:
         risk_level = "LOW"
 
-    # Top SHAP-identified risk indicators
     feature_values = {
         "V14": transaction.V14,
         "V12": transaction.V12,
@@ -125,7 +138,7 @@ def predict(transaction: TransactionFeatures):
     top_indicators = [
         {"feature": k, "value": round(v, 4)}
         for k, v in sorted(feature_values.items(),
-                          key=lambda x: abs(x[1]), reverse=True)[:3]
+                           key=lambda x: abs(x[1]), reverse=True)[:3]
     ]
 
     return PredictionResponse(
