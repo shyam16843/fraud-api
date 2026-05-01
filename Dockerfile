@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+# v3 model - force cache bust
 COPY model/ ./model/
 
 # Expose port
