@@ -11,8 +11,8 @@ app = FastAPI(
     version="2.0.0"
 )
 
-MODEL_PATH = os.getenv("MODEL_PATH", "model/fraud_model.pkl")
-SCALER_PATH = os.getenv("SCALER_PATH", "model/scaler.pkl")
+MODEL_PATH = os.getenv("MODEL_PATH", "model/fraud_model.bin")
+SCALER_PATH = os.getenv("SCALER_PATH", "model/scaler.bin")
 THRESHOLD = float(os.getenv("THRESHOLD", "0.4"))
 
 model = None
