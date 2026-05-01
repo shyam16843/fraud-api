@@ -98,8 +98,8 @@ def predict(transaction: TransactionFeatures):
         time = transaction.Time
 
         if scaler is not None:
-            amount_scaled = float(scaler.transform([[amount, time]])[0][0])
-            time_scaled = float(scaler.transform([[amount, time]])[0][1])
+            amount_scaled = float(scaler.transform([[amount]])[0][0])
+            time_scaled = time  # not scaled
         else:
             amount_scaled = amount
             time_scaled = time
