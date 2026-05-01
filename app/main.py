@@ -92,62 +92,67 @@ def predict(transaction: TransactionFeatures):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Build raw feature array
-    amount = transaction.Amount
-    time = transaction.Time
+    try:
+        # Scale Amount and Time separately
+        amount = transaction.Amount
+        time = transaction.Time
 
-    # Scale Amount and Time if scaler available
-    if scaler is not None:
-        scaled = scaler.transform([[amount, time]])
-        amount_scaled = scaled[0][0]
-        time_scaled = scaled[0][1]
-    else:
-        amount_scaled = amount
-        time_scaled = time
+        if scaler is not None:
+            amount_scaled = float(scaler.transform([[amount, time]])[0][0])
+            time_scaled = float(scaler.transform([[amount, time]])[0][1])
+        else:
+            amount_scaled = amount
+            time_scaled = time
 
-    features = np.array([[
-        transaction.V1, transaction.V2, transaction.V3, transaction.V4,
-        transaction.V5, transaction.V6, transaction.V7, transaction.V8,
-        transaction.V9, transaction.V10, transaction.V11, transaction.V12,
-        transaction.V13, transaction.V14, transaction.V15, transaction.V16,
-        transaction.V17, transaction.V18, transaction.V19, transaction.V20,
-        transaction.V21, transaction.V22, transaction.V23, transaction.V24,
-        transaction.V25, transaction.V26, transaction.V27, transaction.V28,
-        amount_scaled, time_scaled
-    ]])
+        features = np.array([[
+            transaction.V1, transaction.V2, transaction.V3, transaction.V4,
+            transaction.V5, transaction.V6, transaction.V7, transaction.V8,
+            transaction.V9, transaction.V10, transaction.V11, transaction.V12,
+            transaction.V13, transaction.V14, transaction.V15, transaction.V16,
+            transaction.V17, transaction.V18, transaction.V19, transaction.V20,
+            transaction.V21, transaction.V22, transaction.V23, transaction.V24,
+            transaction.V25, transaction.V26, transaction.V27, transaction.V28,
+            amount_scaled, time_scaled
+        ]], dtype=np.float32)
 
-    fraud_prob = float(model.predict_proba(features)[0][1])
-    prediction = "FRAUD" if fraud_prob >= THRESHOLD else "LEGITIMATE"
+        fraud_prob = float(model.predict_proba(features)[0][1])
+        prediction = "FRAUD" if fraud_prob >= THRESHOLD else "LEGITIMATE"
 
-    if fraud_prob >= 0.8:
-        risk_level = "CRITICAL"
-    elif fraud_prob >= 0.5:
-        risk_level = "HIGH"
-    elif fraud_prob >= 0.3:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "LOW"
+        if fraud_prob >= 0.8:
+            risk_level = "CRITICAL"
+        elif fraud_prob >= 0.5:
+            risk_level = "HIGH"
+        elif fraud_prob >= 0.3:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "LOW"
 
-    feature_values = {
-        "V14": transaction.V14,
-        "V12": transaction.V12,
-        "V3": transaction.V3,
-        "V10": transaction.V10,
-        "Amount": transaction.Amount
-    }
-    top_indicators = [
-        {"feature": k, "value": round(v, 4)}
-        for k, v in sorted(feature_values.items(),
-                           key=lambda x: abs(x[1]), reverse=True)[:3]
-    ]
+        feature_values = {
+            "V14": transaction.V14,
+            "V12": transaction.V12,
+            "V3": transaction.V3,
+            "V10": transaction.V10,
+            "Amount": transaction.Amount
+        }
+        top_indicators = [
+            {"feature": k, "value": round(v, 4)}
+            for k, v in sorted(
+                feature_values.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True
+            )[:3]
+        ]
 
-    return PredictionResponse(
-        fraud_probability=round(fraud_prob, 4),
-        prediction=prediction,
-        risk_level=risk_level,
-        top_risk_indicators=top_indicators,
-        message=f"Transaction classified as {prediction} with {round(fraud_prob*100, 2)}% fraud probability"
-    )
+        return PredictionResponse(
+            fraud_probability=round(fraud_prob, 4),
+            prediction=prediction,
+            risk_level=risk_level,
+            top_risk_indicators=top_indicators,
+            message=f"Transaction classified as {prediction} with {round(fraud_prob*100, 2)}% fraud probability"
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 
 @app.post("/predict/batch")
