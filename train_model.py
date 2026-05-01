@@ -1,6 +1,10 @@
 """
-train_model.py - Improved version
-Run this to retrain and save a better model.
+train_model.py - Final version (no scaling, XGBoost handles it natively)
+Run this to retrain and save the model.
+Place creditcard.csv in the same directory before running.
+
+Usage:
+    python train_model.py
 """
 
 import pandas as pd
@@ -9,17 +13,17 @@ import pickle
 import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, roc_auc_score, precision_score
-from sklearn.preprocessing import StandardScaler
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 
 print("=" * 50)
-print("Fraud Detection Model Training v2")
+print("Fraud Detection Model Training v3")
 print("=" * 50)
 
 CSV_PATH = "creditcard.csv"
 if not os.path.exists(CSV_PATH):
     print(f"ERROR: {CSV_PATH} not found.")
+    print("Download from: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud")
     exit(1)
 
 print("Loading dataset...")
@@ -27,11 +31,7 @@ df = pd.read_csv(CSV_PATH)
 print(f"Dataset shape: {df.shape}")
 print(f"Fraud cases: {df['Class'].sum()} ({df['Class'].mean()*100:.4f}%)")
 
-# Scale Amount and Time
-scaler = StandardScaler()
-df['Amount'] = scaler.fit_transform(df[['Amount']])
-df['Time'] = scaler.fit_transform(df[['Time']])
-
+# No scaling — XGBoost handles raw features natively
 X = df.drop("Class", axis=1)
 y = df["Class"]
 
@@ -41,26 +41,19 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 print(f"\nTrain: {X_train.shape[0]} | Test: {X_test.shape[0]}")
 
-# SMOTE oversampling (more reliable than SMOTEENN)
+# SMOTE oversampling
 print("\nApplying SMOTE resampling...")
 smote = SMOTE(random_state=42, sampling_strategy=0.1)
 X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
 print(f"After SMOTE: {X_resampled.shape[0]} samples")
 print(f"Fraud in training: {y_resampled.sum()} cases")
 
-# Calculate scale_pos_weight for XGBoost
-neg = (y_resampled == 0).sum()
-pos = (y_resampled == 1).sum()
-scale = neg / pos
-print(f"\nscale_pos_weight: {scale:.2f}")
-
-# Train XGBoost with better params
+# Train XGBoost
 print("\nTraining XGBoost...")
 model = XGBClassifier(
     n_estimators=200,
     max_depth=6,
     learning_rate=0.05,
-    scale_pos_weight=scale,
     subsample=0.8,
     colsample_bytree=0.8,
     min_child_weight=1,
@@ -76,27 +69,23 @@ model.fit(
     verbose=50
 )
 
-# Evaluate at different thresholds
+# Evaluate
 print("\n--- Evaluation ---")
 y_prob = model.predict_proba(X_test)[:, 1]
 print(f"ROC-AUC: {roc_auc_score(y_test, y_prob):.4f}")
 
 for threshold in [0.3, 0.4, 0.5]:
     y_pred = (y_prob >= threshold).astype(int)
-    p = precision_score(y_test, y_pred, zero_division=0)
     print(f"\nThreshold {threshold}:")
     print(classification_report(y_test, y_pred,
           target_names=["Legitimate", "Fraud"]))
 
-# Save model + scaler
+# Save model only — no scaler needed
 os.makedirs("model", exist_ok=True)
-with open("model/fraud_model.pkl", "wb") as f:
+with open("model/fraud_model.bin", "wb") as f:
     pickle.dump(model, f)
-with open("model/scaler.pkl", "wb") as f:
-    pickle.dump(scaler, f)
 
-print("\n✅ Model saved to model/fraud_model.pkl")
-print("✅ Scaler saved to model/scaler.pkl")
+print("\n✅ Model saved to model/fraud_model.bin")
 print("\nSample fraud probabilities from test set:")
 fraud_idx = y_test[y_test == 1].index[:5]
 for idx in fraud_idx:

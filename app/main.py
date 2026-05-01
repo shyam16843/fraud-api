@@ -8,30 +8,23 @@ from typing import Optional
 app = FastAPI(
     title="Fraud Detection API",
     description="XGBoost-based credit card fraud detection with SHAP explainability",
-    version="2.0.0"
+    version="3.0.0"
 )
 
 MODEL_PATH = os.getenv("MODEL_PATH", "model/fraud_model.bin")
-SCALER_PATH = os.getenv("SCALER_PATH", "model/scaler.bin")
 THRESHOLD = float(os.getenv("THRESHOLD", "0.4"))
 
 model = None
-scaler = None
 
 @app.on_event("startup")
 def load_model():
-    global model, scaler
+    global model
     if os.path.exists(MODEL_PATH):
         with open(MODEL_PATH, "rb") as f:
             model = pickle.load(f)
-        print("✅ Model loaded")
+        print("✅ Model loaded successfully")
     else:
         print(f"❌ Model not found at {MODEL_PATH}")
-
-    if os.path.exists(SCALER_PATH):
-        with open(SCALER_PATH, "rb") as f:
-            scaler = pickle.load(f)
-        print("✅ Scaler loaded")
 
 
 class TransactionFeatures(BaseModel):
@@ -58,7 +51,7 @@ class PredictionResponse(BaseModel):
 def root():
     return {
         "service": "Fraud Detection API",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "author": "Ghanashyam T V",
         "github": "github.com/shyam16843/fraud-detection-api",
         "live_streamlit": "https://fraud-detection-shyam.streamlit.app",
@@ -76,7 +69,6 @@ def health():
     return {
         "status": "healthy",
         "model_loaded": model is not None,
-        "scaler_loaded": scaler is not None,
         "model_type": "XGBoost + SMOTE",
         "threshold": THRESHOLD,
         "performance": {
@@ -93,17 +85,6 @@ def predict(transaction: TransactionFeatures):
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     try:
-        # Scale Amount and Time separately
-        amount = transaction.Amount
-        time = transaction.Time
-
-        if scaler is not None:
-            amount_scaled = float(scaler.transform([[amount]])[0][0])
-            time_scaled = time  # not scaled
-        else:
-            amount_scaled = amount
-            time_scaled = time
-
         features = np.array([[
             transaction.V1, transaction.V2, transaction.V3, transaction.V4,
             transaction.V5, transaction.V6, transaction.V7, transaction.V8,
@@ -112,7 +93,7 @@ def predict(transaction: TransactionFeatures):
             transaction.V17, transaction.V18, transaction.V19, transaction.V20,
             transaction.V21, transaction.V22, transaction.V23, transaction.V24,
             transaction.V25, transaction.V26, transaction.V27, transaction.V28,
-            amount_scaled, time_scaled
+            transaction.Amount, transaction.Time
         ]], dtype=np.float32)
 
         fraud_prob = float(model.predict_proba(features)[0][1])
