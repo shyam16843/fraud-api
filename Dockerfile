@@ -1,20 +1,15 @@
-# Dockerfile for Fraud Detection FastAPI
 FROM python:3.10-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY app/ ./app/
-# v3 model - force cache bust
-COPY model/ ./model/
+COPY sample_fraud.csv .
+COPY train_model_docker.py .
 
-# Expose port
+RUN python train_model_docker.py
+
 EXPOSE 8000
-
-# Run FastAPI with uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
